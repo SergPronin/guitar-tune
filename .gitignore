@@ -8,11 +8,13 @@ __pycache__/
 dist/
 build/
 *.egg
+*.pyc
 
 # Virtual environments
 venv/
 env/
 ENV/
+.venv/
 
 # IDEs
 .vscode/
@@ -21,6 +23,7 @@ ENV/
 *.swo
 *~
 .DS_Store
+*.code-workspace
 
 # Project specific
 libs/
@@ -35,3 +38,21 @@ libs_py313/
 # Test outputs
 *.wav
 *.mp3
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/

@@ -7,8 +7,8 @@ import os
 
 # Добавляем локальные папки libs в путь поиска модулей
 libs_paths = [
-    os.path.join(os.path.dirname(__file__), 'libs_py313'),
-    os.path.join(os.path.dirname(__file__), 'libs')
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'libs_py313'),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'libs')
 ]
 for lib_path in libs_paths:
     if os.path.exists(lib_path):

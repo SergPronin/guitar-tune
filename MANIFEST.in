@@ -1,0 +1,9 @@
+include README.md
+include LICENSE
+include requirements.txt
+include guitar_tuner.py
+recursive-include src *.py
+recursive-include docs *.md *.txt
+recursive-include tests *.py
+global-exclude __pycache__
+global-exclude *.py[co]
