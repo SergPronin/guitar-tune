@@ -1,5 +1,6 @@
 """
-Гитарный тюнер с графическим интерфейсом (CustomTkinter).
+Гитарный тюнер с профессиональным графическим интерфейсом (CustomTkinter).
+Дизайн: минималистичный, фокус на процессе настройки, плавная анимация.
 """
 
 import sys
@@ -15,16 +16,27 @@ for lib_path in libs_paths:
         sys.path.insert(0, lib_path)
 
 import customtkinter as ctk
-import threading
 import queue
 import numpy as np
 from config import TuningConfig
 from pitch_detector import PitchDetector
 from audio_engine import AudioEngine
+from collections import deque
 
 
 class GuitarTunerGUI:
-    """Графический интерфейс гитарного тюнера."""
+    """Профессиональный графический интерфейс гитарного тюнера."""
+    
+    # Цветовая палитра
+    COLOR_BG_DARK = "#1a1a1a"
+    COLOR_BG_MEDIUM = "#2d2d2d"
+    COLOR_ACCENT = "#00d4ff"
+    COLOR_GREEN = "#00ff88"
+    COLOR_YELLOW = "#ffcc00"
+    COLOR_ORANGE = "#ff8800"
+    COLOR_RED = "#ff4444"
+    COLOR_TEXT_DIM = "#666666"
+    COLOR_TEXT_NORMAL = "#cccccc"
     
     def __init__(self):
         """Инициализация GUI."""
@@ -35,9 +47,10 @@ class GuitarTunerGUI:
         
         # Создание главного окна
         self.root = ctk.CTk()
-        self.root.title("Гитарный Тюнер 🎸")
-        self.root.geometry("600x650")
+        self.root.title("Guitar Tuner Pro")
+        self.root.geometry("700x800")
         self.root.resizable(False, False)
+        self.root.configure(fg_color=self.COLOR_BG_DARK)
         
         # Инициализация компонентов
         self.sample_rate = 44100
@@ -57,16 +70,20 @@ class GuitarTunerGUI:
         # Очередь для передачи данных из аудио-потока в GUI
         self.data_queue = queue.Queue()
         
-        # Буфер сглаживания
-        self.frequency_buffer = []
-        self.buffer_size = 3
+        # Буфер для сглаживания (увеличен для плавности)
+        self.cents_buffer = deque(maxlen=8)
+        self.frequency_buffer = deque(maxlen=3)
+        
+        # Текущие значения для плавной анимации
+        self.current_cents = 0.0
+        self.target_cents = 0.0
+        self.animation_speed = 0.3  # Скорость интерполяции (0-1)
         
         # Флаг работы
         self.is_running = False
         
-        # Счетчики для отладки
+        # Счетчики
         self.audio_blocks_received = 0
-        self.last_rms = 0.0
         
         # Создание UI
         self.create_ui()
@@ -77,159 +94,220 @@ class GuitarTunerGUI:
     def create_ui(self):
         """Создание элементов интерфейса."""
         
-        # Заголовок
-        title_label = ctk.CTkLabel(
+        # Верхняя панель - выбор строя
+        self.create_tuning_selector()
+        
+        # Центральная область - главный индикатор
+        self.create_main_display()
+        
+        # Шкала настройки (визуальный метр)
+        self.create_tuning_meter()
+        
+        # Нижняя панель - управление
+        self.create_control_panel()
+    
+    def create_tuning_selector(self):
+        """Создание селектора строя."""
+        tuning_frame = ctk.CTkFrame(
             self.root,
-            text="🎸 Гитарный Тюнер",
-            font=ctk.CTkFont(size=32, weight="bold")
+            fg_color=self.COLOR_BG_MEDIUM,
+            corner_radius=15
         )
-        title_label.pack(pady=20)
+        tuning_frame.pack(pady=20, padx=30, fill="x")
         
-        # Выбор строя
-        tuning_frame = ctk.CTkFrame(self.root)
-        tuning_frame.pack(pady=10, padx=20, fill="x")
-        
+        # Лейбл "Tuning"
         tuning_label = ctk.CTkLabel(
             tuning_frame,
-            text="Строй:",
-            font=ctk.CTkFont(size=16)
+            text="TUNING",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=self.COLOR_TEXT_DIM
         )
-        tuning_label.pack(side="left", padx=10)
+        tuning_label.pack(side="left", padx=20, pady=15)
         
+        # Segmented button для выбора строя
         self.tuning_var = ctk.StringVar(value="Standard")
-        tuning_menu = ctk.CTkOptionMenu(
+        tuning_selector = ctk.CTkSegmentedButton(
             tuning_frame,
-            variable=self.tuning_var,
             values=TuningConfig.get_tuning_names(),
+            variable=self.tuning_var,
             command=self.on_tuning_change,
-            font=ctk.CTkFont(size=14),
-            width=200
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color=self.COLOR_BG_DARK,
+            selected_color=self.COLOR_ACCENT,
+            selected_hover_color=self.COLOR_ACCENT,
+            unselected_color=self.COLOR_BG_DARK,
+            unselected_hover_color=self.COLOR_BG_MEDIUM
         )
-        tuning_menu.pack(side="left", padx=10)
-        
-        # Отображение нот строя
-        self.tuning_notes_label = ctk.CTkLabel(
-            tuning_frame,
-            text=self.get_tuning_notes_text("Standard"),
-            font=ctk.CTkFont(size=12),
-            text_color="gray"
+        tuning_selector.pack(side="left", padx=20, pady=15, expand=True)
+    
+    def create_main_display(self):
+        """Создание главного дисплея с нотой."""
+        display_frame = ctk.CTkFrame(
+            self.root,
+            fg_color="transparent"
         )
-        self.tuning_notes_label.pack(side="left", padx=10)
+        display_frame.pack(pady=40, fill="both", expand=True)
         
-        # Основная область - текущая нота
-        note_frame = ctk.CTkFrame(self.root, fg_color="transparent")
-        note_frame.pack(pady=30)
+        # Статус (сверху, мелким шрифтом)
+        self.status_label = ctk.CTkLabel(
+            display_frame,
+            text="READY",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=self.COLOR_TEXT_DIM
+        )
+        self.status_label.pack(pady=(0, 10))
         
+        # Главный лейбл - НОТА (огромный шрифт)
         self.note_label = ctk.CTkLabel(
-            note_frame,
+            display_frame,
             text="—",
-            font=ctk.CTkFont(size=120, weight="bold"),
-            text_color="gray"
+            font=ctk.CTkFont(size=140, weight="bold"),
+            text_color=self.COLOR_TEXT_DIM
         )
-        self.note_label.pack()
+        self.note_label.pack(pady=10)
         
-        # Частота
+        # Частота (средний шрифт)
         self.frequency_label = ctk.CTkLabel(
-            note_frame,
-            text="Играйте на гитаре",
-            font=ctk.CTkFont(size=14),
-            text_color="gray"
+            display_frame,
+            text="— Hz",
+            font=ctk.CTkFont(size=24),
+            text_color=self.COLOR_TEXT_DIM
         )
         self.frequency_label.pack(pady=5)
         
-        # Индикатор отклонения (Progressbar)
-        tuning_indicator_frame = ctk.CTkFrame(self.root)
-        tuning_indicator_frame.pack(pady=20, padx=40, fill="x")
-        
-        # Метки шкалы
-        scale_frame = ctk.CTkFrame(tuning_indicator_frame, fg_color="transparent")
-        scale_frame.pack(fill="x")
-        
-        left_label = ctk.CTkLabel(
-            scale_frame,
-            text="Слабее (-50)",
-            font=ctk.CTkFont(size=10),
-            text_color="gray"
-        )
-        left_label.pack(side="left")
-        
-        center_label = ctk.CTkLabel(
-            scale_frame,
-            text="ИДЕАЛЬНО (0)",
-            font=ctk.CTkFont(size=10, weight="bold"),
-            text_color="gray"
-        )
-        center_label.pack(side="left", expand=True)
-        
-        right_label = ctk.CTkLabel(
-            scale_frame,
-            text="Сильнее (+50)",
-            font=ctk.CTkFont(size=10),
-            text_color="gray"
-        )
-        right_label.pack(side="right")
-        
-        # Прогресс-бар (от 0 до 100, где 50 = идеально настроено)
-        self.tuning_progressbar = ctk.CTkProgressBar(
-            tuning_indicator_frame,
-            width=500,
-            height=20,
-            progress_color="gray"
-        )
-        self.tuning_progressbar.pack(pady=10)
-        self.tuning_progressbar.set(0.5)  # Центр
-        
-        # Текст отклонения
+        # Отклонение в центах (крупный шрифт)
         self.cents_label = ctk.CTkLabel(
-            tuning_indicator_frame,
-            text="0 центов",
-            font=ctk.CTkFont(size=16, weight="bold"),
-            text_color="gray"
+            display_frame,
+            text="—",
+            font=ctk.CTkFont(size=32, weight="bold"),
+            text_color=self.COLOR_TEXT_DIM
         )
-        self.cents_label.pack(pady=5)
-        
-        # Статус
-        self.status_label = ctk.CTkLabel(
-            self.root,
-            text="",
-            font=ctk.CTkFont(size=14),
-            text_color="gray"
-        )
-        self.status_label.pack(pady=5)
-        
-        # Индикатор уровня сигнала (отладка)
-        self.signal_label = ctk.CTkLabel(
-            self.root,
-            text="Уровень сигнала: —",
-            font=ctk.CTkFont(size=11),
-            text_color="gray"
-        )
-        self.signal_label.pack(pady=5)
-        
-        # Кнопка запуска/остановки
-        self.start_button = ctk.CTkButton(
-            self.root,
-            text="▶ Начать настройку",
-            command=self.toggle_tuner,
-            font=ctk.CTkFont(size=16, weight="bold"),
-            width=200,
-            height=40,
-            fg_color="green",
-            hover_color="darkgreen"
-        )
-        self.start_button.pack(pady=20)
+        self.cents_label.pack(pady=10)
     
-    def get_tuning_notes_text(self, tuning_name):
-        """Возвращает строку с нотами выбранного строя."""
-        notes = [note for note, _ in TuningConfig.get_tuning(tuning_name)]
-        return f"({', '.join(notes)})"
+    def create_tuning_meter(self):
+        """Создание визуальной шкалы настройки."""
+        meter_frame = ctk.CTkFrame(
+            self.root,
+            fg_color=self.COLOR_BG_MEDIUM,
+            corner_radius=20,
+            height=180
+        )
+        meter_frame.pack(pady=30, padx=40, fill="x")
+        meter_frame.pack_propagate(False)
+        
+        # Заголовок
+        meter_title = ctk.CTkLabel(
+            meter_frame,
+            text="TUNING METER",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=self.COLOR_TEXT_DIM
+        )
+        meter_title.pack(pady=(15, 10))
+        
+        # Контейнер для шкалы
+        scale_container = ctk.CTkFrame(meter_frame, fg_color="transparent")
+        scale_container.pack(pady=10, padx=30, fill="x")
+        
+        # Метки границ (-50, 0, +50)
+        marks_frame = ctk.CTkFrame(scale_container, fg_color="transparent")
+        marks_frame.pack(fill="x", pady=(0, 5))
+        
+        left_mark = ctk.CTkLabel(
+            marks_frame,
+            text="-50",
+            font=ctk.CTkFont(size=10),
+            text_color=self.COLOR_TEXT_DIM
+        )
+        left_mark.pack(side="left")
+        
+        center_mark = ctk.CTkLabel(
+            marks_frame,
+            text="0",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=self.COLOR_TEXT_NORMAL
+        )
+        center_mark.pack(side="left", expand=True)
+        
+        right_mark = ctk.CTkLabel(
+            marks_frame,
+            text="+50",
+            font=ctk.CTkFont(size=10),
+            text_color=self.COLOR_TEXT_DIM
+        )
+        right_mark.pack(side="right")
+        
+        # Создаем визуальную шкалу из сегментов
+        self.meter_segments = []
+        segments_frame = ctk.CTkFrame(scale_container, fg_color="transparent")
+        segments_frame.pack(fill="x", pady=5)
+        
+        # 51 сегмент: от -50 до +50
+        num_segments = 51
+        for i in range(num_segments):
+            segment = ctk.CTkFrame(
+                segments_frame,
+                width=10,
+                height=30,
+                fg_color=self.COLOR_BG_DARK,
+                corner_radius=2
+            )
+            segment.pack(side="left", padx=1, expand=True, fill="both")
+            self.meter_segments.append(segment)
+        
+        # Индикатор положения (стрелка/указатель)
+        indicator_frame = ctk.CTkFrame(scale_container, fg_color="transparent", height=40)
+        indicator_frame.pack(fill="x", pady=(5, 0))
+        
+        self.indicator_canvas_frame = ctk.CTkFrame(
+            indicator_frame,
+            fg_color="transparent"
+        )
+        self.indicator_canvas_frame.pack(fill="x")
+        
+        # Создаем индикатор (треугольник)
+        self.indicator = ctk.CTkLabel(
+            self.indicator_canvas_frame,
+            text="▼",
+            font=ctk.CTkFont(size=24),
+            text_color=self.COLOR_ACCENT
+        )
+        self.indicator.place(relx=0.5, rely=0, anchor="n")
+    
+    def create_control_panel(self):
+        """Создание панели управления."""
+        control_frame = ctk.CTkFrame(
+            self.root,
+            fg_color="transparent"
+        )
+        control_frame.pack(pady=20, padx=40, fill="x")
+        
+        # Кнопка запуска/остановки (большая, центральная)
+        self.start_button = ctk.CTkButton(
+            control_frame,
+            text="START TUNING",
+            command=self.toggle_tuner,
+            font=ctk.CTkFont(size=18, weight="bold"),
+            width=300,
+            height=60,
+            corner_radius=30,
+            fg_color=self.COLOR_ACCENT,
+            hover_color="#00b8dd",
+            text_color="#000000"
+        )
+        self.start_button.pack(pady=10)
+        
+        # Индикатор уровня сигнала (минималистичный)
+        self.signal_label = ctk.CTkLabel(
+            control_frame,
+            text="",
+            font=ctk.CTkFont(size=10),
+            text_color=self.COLOR_TEXT_DIM
+        )
+        self.signal_label.pack(pady=10)
     
     def on_tuning_change(self, choice):
         """Обработчик изменения строя."""
         self.current_tuning = choice
-        self.tuning_notes_label.configure(
-            text=self.get_tuning_notes_text(choice)
-        )
     
     def toggle_tuner(self):
         """Запуск/остановка тюнера."""
@@ -242,13 +320,13 @@ class GuitarTunerGUI:
         """Запуск тюнера."""
         self.is_running = True
         self.start_button.configure(
-            text="⏸ Остановить",
-            fg_color="red",
-            hover_color="darkred"
+            text="STOP TUNING",
+            fg_color=self.COLOR_RED,
+            hover_color="#dd3333"
         )
         self.status_label.configure(
-            text="🎤 Слушаю микрофон...",
-            text_color="green"
+            text="LISTENING...",
+            text_color=self.COLOR_ACCENT
         )
         
         # Запуск аудио-потока
@@ -262,34 +340,32 @@ class GuitarTunerGUI:
         self.is_running = False
         self.audio_engine.stop()
         
-        # Сброс счетчиков
+        # Сброс состояния
         self.audio_blocks_received = 0
-        self.last_rms = 0.0
-        self.frequency_buffer = []
+        self.cents_buffer.clear()
+        self.frequency_buffer.clear()
+        self.current_cents = 0.0
+        self.target_cents = 0.0
         
         self.start_button.configure(
-            text="▶ Начать настройку",
-            fg_color="green",
-            hover_color="darkgreen"
+            text="START TUNING",
+            fg_color=self.COLOR_ACCENT,
+            hover_color="#00b8dd"
         )
         self.status_label.configure(
-            text="Тюнер остановлен",
-            text_color="gray"
+            text="READY",
+            text_color=self.COLOR_TEXT_DIM
         )
-        self.signal_label.configure(
-            text="Уровень сигнала: —",
-            text_color="gray"
-        )
+        self.signal_label.configure(text="")
         
         # Сброс дисплея
-        self.note_label.configure(text="—", text_color="gray")
-        self.frequency_label.configure(
-            text="Нажмите 'Начать настройку'",
-            text_color="gray"
-        )
-        self.cents_label.configure(text="0 центов", text_color="gray")
-        self.tuning_progressbar.set(0.5)
-        self.tuning_progressbar.configure(progress_color="gray")
+        self.note_label.configure(text="—", text_color=self.COLOR_TEXT_DIM)
+        self.frequency_label.configure(text="— Hz", text_color=self.COLOR_TEXT_DIM)
+        self.cents_label.configure(text="—", text_color=self.COLOR_TEXT_DIM)
+        
+        # Сброс шкалы
+        self.update_meter(0, self.COLOR_TEXT_DIM)
+        self.indicator.configure(text_color=self.COLOR_TEXT_DIM)
     
     def process_audio(self, audio_data: np.ndarray):
         """
@@ -300,25 +376,23 @@ class GuitarTunerGUI:
         """
         self.audio_blocks_received += 1
         
-        # Вычисляем RMS для отладки
-        self.last_rms = np.sqrt(np.mean(audio_data ** 2))
+        # Вычисляем RMS
+        rms = np.sqrt(np.mean(audio_data ** 2))
         
         # Определяем частоту
         frequency = self.pitch_detector.detect_pitch(audio_data)
         
-        # Отправляем данные об уровне сигнала даже если частота не определена
+        # Отправляем данные в очередь
         try:
             if frequency is None:
                 self.data_queue.put_nowait({
                     'type': 'signal_level',
-                    'rms': self.last_rms,
+                    'rms': rms,
                     'blocks': self.audio_blocks_received
                 })
             else:
                 # Добавляем в буфер для сглаживания
                 self.frequency_buffer.append(frequency)
-                if len(self.frequency_buffer) > self.buffer_size:
-                    self.frequency_buffer.pop(0)
                 
                 # Вычисляем среднюю частоту
                 avg_frequency = np.mean(self.frequency_buffer)
@@ -329,14 +403,18 @@ class GuitarTunerGUI:
                     self.current_tuning
                 )
                 
+                # Добавляем центы в буфер для сглаживания
+                self.cents_buffer.append(cents)
+                smoothed_cents = np.mean(self.cents_buffer)
+                
                 # Отправляем данные в очередь для GUI
                 self.data_queue.put_nowait({
                     'type': 'note',
                     'note': note_name,
                     'frequency': avg_frequency,
                     'target_frequency': target_freq,
-                    'cents': cents,
-                    'rms': self.last_rms,
+                    'cents': smoothed_cents,
+                    'rms': rms,
                     'blocks': self.audio_blocks_received
                 })
         except queue.Full:
@@ -359,16 +437,30 @@ class GuitarTunerGUI:
                         data['target_frequency'],
                         data['cents']
                     )
-                    # Обновляем уровень сигнала
                     self.update_signal_level(data['rms'], data['blocks'])
                 elif data['type'] == 'signal_level':
-                    # Только обновляем уровень сигнала
                     self.update_signal_level(data['rms'], data['blocks'])
         except queue.Empty:
             pass
         
-        # Повторяем через 50 мс
-        self.root.after(50, self.update_gui)
+        # Плавная анимация индикатора
+        self.animate_indicator()
+        
+        # Повторяем через 30 мс (примерно 33 FPS)
+        self.root.after(30, self.update_gui)
+    
+    def animate_indicator(self):
+        """Плавная анимация перемещения индикатора."""
+        # Интерполяция между текущим и целевым значением
+        diff = self.target_cents - self.current_cents
+        self.current_cents += diff * self.animation_speed
+        
+        # Обновляем позицию индикатора
+        # Преобразуем центы (-50...+50) в relative position (0...1)
+        cents_clamped = max(-50, min(50, self.current_cents))
+        rel_pos = (cents_clamped + 50) / 100.0
+        
+        self.indicator.place(relx=rel_pos, rely=0, anchor="n")
     
     def update_signal_level(self, rms, blocks):
         """
@@ -378,70 +470,109 @@ class GuitarTunerGUI:
             rms: уровень RMS сигнала
             blocks: количество обработанных блоков
         """
-        # Создаем визуальный индикатор
-        bars = int(rms * 500)
-        bar_str = '█' * min(bars, 20)
-        
-        # Определяем цвет
         if rms < 0.001:
-            color = "red"
-            text = f"Уровень: {rms:.6f} | {bar_str:<20} | Блоков: {blocks} ⚠️ СЛИШКОМ ТИХО"
+            self.signal_label.configure(
+                text=f"Signal: too low • Play louder",
+                text_color=self.COLOR_RED
+            )
         elif rms < 0.01:
-            color = "orange"
-            text = f"Уровень: {rms:.6f} | {bar_str:<20} | Блоков: {blocks} ⚠️ Играйте громче"
+            self.signal_label.configure(
+                text=f"Signal: weak • Play slightly louder",
+                text_color=self.COLOR_ORANGE
+            )
         else:
-            color = "green"
-            text = f"Уровень: {rms:.6f} | {bar_str:<20} | Блоков: {blocks} ✓"
-        
-        self.signal_label.configure(text=text, text_color=color)
+            self.signal_label.configure(
+                text=f"Signal: good • Blocks: {blocks}",
+                text_color=self.COLOR_GREEN
+            )
     
     def display_tuning_info(self, note, current_freq, target_freq, cents):
         """
-        Отображение информации о настройке.
+        Отображение информации о настройке с цветовой индикацией.
         
         Args:
             note: название ноты
             current_freq: текущая частота
             target_freq: целевая частота
-            cents: отклонение в центах
+            cents: отклонение в центах (уже сглаженное)
         """
-        # Определяем цвет и статус
-        if abs(cents) <= 5:
-            color = "green"
-            status = "✅ НАСТРОЕНА"
-        elif cents > 0:
-            color = "#FFA500"  # оранжевый
-            status = "↑ ПЕРЕТЯНУТА"
-        else:
-            color = "#FFA500"  # оранжевый
-            status = "↓ НЕДОТЯНУТА"
+        # Устанавливаем целевое значение для анимации
+        self.target_cents = cents
         
-        # Обновляем ноту
+        # Определяем цвет и статус на основе отклонения
+        abs_cents = abs(cents)
+        
+        if abs_cents <= 5:
+            # Идеально настроено
+            color = self.COLOR_GREEN
+            status = "IN TUNE"
+            meter_color = self.COLOR_GREEN
+        elif abs_cents <= 10:
+            # Почти настроено
+            color = self.COLOR_YELLOW
+            status = "ALMOST" if cents > 0 else "ALMOST"
+            meter_color = self.COLOR_YELLOW
+        else:
+            # Не настроено
+            color = self.COLOR_ORANGE
+            status = "TOO HIGH" if cents > 0 else "TOO LOW"
+            meter_color = self.COLOR_ORANGE
+        
+        # Обновляем главную ноту
         self.note_label.configure(text=note, text_color=color)
         
         # Обновляем частоту
-        freq_text = f"{current_freq:.2f} Гц (цель: {target_freq:.2f} Гц)"
+        freq_text = f"{current_freq:.1f} Hz"
         self.frequency_label.configure(text=freq_text, text_color=color)
         
         # Обновляем отклонение
-        cents_text = f"{cents:+.1f} центов"
+        cents_text = f"{cents:+.1f} cents"
         self.cents_label.configure(text=cents_text, text_color=color)
-        
-        # Обновляем прогресс-бар
-        # Преобразуем центы (-50...+50) в прогресс (0...1)
-        # -50 центов = 0, 0 центов = 0.5, +50 центов = 1.0
-        cents_clamped = max(-50, min(50, cents))
-        progress = (cents_clamped + 50) / 100.0
-        self.tuning_progressbar.set(progress)
-        
-        # Цвет прогресс-бара
-        if abs(cents) <= 5:
-            self.tuning_progressbar.configure(progress_color="green")
-        else:
-            self.tuning_progressbar.configure(progress_color="#FFA500")
         
         # Обновляем статус
         self.status_label.configure(text=status, text_color=color)
+        
+        # Обновляем визуальную шкалу
+        self.update_meter(cents, meter_color)
+        
+        # Обновляем цвет индикатора
+        self.indicator.configure(text_color=color)
+    
+    def update_meter(self, cents, color):
+        """
+        Обновление визуальной шкалы (сегментов).
+        
+        Args:
+            cents: отклонение в центах
+            color: цвет активных сегментов
+        """
+        # Преобразуем центы в индекс сегмента (0-50)
+        cents_clamped = max(-50, min(50, cents))
+        center_index = 25  # Центр шкалы
+        current_index = int(center_index + cents_clamped / 2)
+        
+        # Обновляем цвет сегментов
+        for i, segment in enumerate(self.meter_segments):
+            if i == center_index:
+                # Центральный сегмент всегда выделен
+                segment.configure(fg_color=self.COLOR_TEXT_NORMAL)
+            elif abs(i - center_index) <= 2:
+                # Зона идеальной настройки (±5 центов)
+                if abs(current_index - center_index) <= 2:
+                    segment.configure(fg_color=self.COLOR_GREEN)
+                else:
+                    segment.configure(fg_color=self.COLOR_BG_DARK)
+            else:
+                # Остальные сегменты
+                if (current_index < center_index and center_index <= i <= current_index) or \
+                   (current_index > center_index and current_index <= i <= center_index) or \
+                   (current_index < center_index and i <= center_index and i >= current_index) or \
+                   (current_index > center_index and i >= center_index and i <= current_index):
+                    # Активные сегменты
+                    segment.configure(fg_color=color)
+                else:
+                    # Неактивные сегменты
+                    segment.configure(fg_color=self.COLOR_BG_DARK)
     
     def on_closing(self):
         """Обработчик закрытия окна."""
