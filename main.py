@@ -36,7 +36,7 @@ class GuitarTunerGUI:
         # Создание главного окна
         self.root = ctk.CTk()
         self.root.title("Гитарный Тюнер 🎸")
-        self.root.geometry("600x500")
+        self.root.geometry("600x650")
         self.root.resizable(False, False)
         
         # Инициализация компонентов
@@ -63,6 +63,10 @@ class GuitarTunerGUI:
         
         # Флаг работы
         self.is_running = False
+        
+        # Счетчики для отладки
+        self.audio_blocks_received = 0
+        self.last_rms = 0.0
         
         # Создание UI
         self.create_ui()
@@ -191,7 +195,16 @@ class GuitarTunerGUI:
             font=ctk.CTkFont(size=14),
             text_color="gray"
         )
-        self.status_label.pack(pady=10)
+        self.status_label.pack(pady=5)
+        
+        # Индикатор уровня сигнала (отладка)
+        self.signal_label = ctk.CTkLabel(
+            self.root,
+            text="Уровень сигнала: —",
+            font=ctk.CTkFont(size=11),
+            text_color="gray"
+        )
+        self.signal_label.pack(pady=5)
         
         # Кнопка запуска/остановки
         self.start_button = ctk.CTkButton(
@@ -249,6 +262,11 @@ class GuitarTunerGUI:
         self.is_running = False
         self.audio_engine.stop()
         
+        # Сброс счетчиков
+        self.audio_blocks_received = 0
+        self.last_rms = 0.0
+        self.frequency_buffer = []
+        
         self.start_button.configure(
             text="▶ Начать настройку",
             fg_color="green",
@@ -256,6 +274,10 @@ class GuitarTunerGUI:
         )
         self.status_label.configure(
             text="Тюнер остановлен",
+            text_color="gray"
+        )
+        self.signal_label.configure(
+            text="Уровень сигнала: —",
             text_color="gray"
         )
         
@@ -276,34 +298,47 @@ class GuitarTunerGUI:
         Args:
             audio_data: массив аудиоданных
         """
+        self.audio_blocks_received += 1
+        
+        # Вычисляем RMS для отладки
+        self.last_rms = np.sqrt(np.mean(audio_data ** 2))
+        
         # Определяем частоту
         frequency = self.pitch_detector.detect_pitch(audio_data)
         
-        if frequency is None:
-            return
-        
-        # Добавляем в буфер для сглаживания
-        self.frequency_buffer.append(frequency)
-        if len(self.frequency_buffer) > self.buffer_size:
-            self.frequency_buffer.pop(0)
-        
-        # Вычисляем среднюю частоту
-        avg_frequency = np.mean(self.frequency_buffer)
-        
-        # Находим ближайшую ноту
-        note_name, target_freq, cents = TuningConfig.find_closest_note(
-            avg_frequency,
-            self.current_tuning
-        )
-        
-        # Отправляем данные в очередь для GUI
+        # Отправляем данные об уровне сигнала даже если частота не определена
         try:
-            self.data_queue.put_nowait({
-                'note': note_name,
-                'frequency': avg_frequency,
-                'target_frequency': target_freq,
-                'cents': cents
-            })
+            if frequency is None:
+                self.data_queue.put_nowait({
+                    'type': 'signal_level',
+                    'rms': self.last_rms,
+                    'blocks': self.audio_blocks_received
+                })
+            else:
+                # Добавляем в буфер для сглаживания
+                self.frequency_buffer.append(frequency)
+                if len(self.frequency_buffer) > self.buffer_size:
+                    self.frequency_buffer.pop(0)
+                
+                # Вычисляем среднюю частоту
+                avg_frequency = np.mean(self.frequency_buffer)
+                
+                # Находим ближайшую ноту
+                note_name, target_freq, cents = TuningConfig.find_closest_note(
+                    avg_frequency,
+                    self.current_tuning
+                )
+                
+                # Отправляем данные в очередь для GUI
+                self.data_queue.put_nowait({
+                    'type': 'note',
+                    'note': note_name,
+                    'frequency': avg_frequency,
+                    'target_frequency': target_freq,
+                    'cents': cents,
+                    'rms': self.last_rms,
+                    'blocks': self.audio_blocks_received
+                })
         except queue.Full:
             pass
     
@@ -316,17 +351,49 @@ class GuitarTunerGUI:
         try:
             while True:
                 data = self.data_queue.get_nowait()
-                self.display_tuning_info(
-                    data['note'],
-                    data['frequency'],
-                    data['target_frequency'],
-                    data['cents']
-                )
+                
+                if data['type'] == 'note':
+                    self.display_tuning_info(
+                        data['note'],
+                        data['frequency'],
+                        data['target_frequency'],
+                        data['cents']
+                    )
+                    # Обновляем уровень сигнала
+                    self.update_signal_level(data['rms'], data['blocks'])
+                elif data['type'] == 'signal_level':
+                    # Только обновляем уровень сигнала
+                    self.update_signal_level(data['rms'], data['blocks'])
         except queue.Empty:
             pass
         
         # Повторяем через 50 мс
         self.root.after(50, self.update_gui)
+    
+    def update_signal_level(self, rms, blocks):
+        """
+        Обновление индикатора уровня сигнала.
+        
+        Args:
+            rms: уровень RMS сигнала
+            blocks: количество обработанных блоков
+        """
+        # Создаем визуальный индикатор
+        bars = int(rms * 500)
+        bar_str = '█' * min(bars, 20)
+        
+        # Определяем цвет
+        if rms < 0.001:
+            color = "red"
+            text = f"Уровень: {rms:.6f} | {bar_str:<20} | Блоков: {blocks} ⚠️ СЛИШКОМ ТИХО"
+        elif rms < 0.01:
+            color = "orange"
+            text = f"Уровень: {rms:.6f} | {bar_str:<20} | Блоков: {blocks} ⚠️ Играйте громче"
+        else:
+            color = "green"
+            text = f"Уровень: {rms:.6f} | {bar_str:<20} | Блоков: {blocks} ✓"
+        
+        self.signal_label.configure(text=text, text_color=color)
     
     def display_tuning_info(self, note, current_freq, target_freq, cents):
         """
