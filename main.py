@@ -48,7 +48,7 @@ class GuitarTunerGUI:
         # Создание главного окна
         self.root = ctk.CTk()
         self.root.title("Guitar Tuner Pro")
-        self.root.geometry("700x800")
+        self.root.geometry("600x700")
         self.root.resizable(False, False)
         self.root.configure(fg_color=self.COLOR_BG_DARK)
         
@@ -146,7 +146,7 @@ class GuitarTunerGUI:
             self.root,
             fg_color="transparent"
         )
-        display_frame.pack(pady=40, fill="both", expand=True)
+        display_frame.pack(pady=20, fill="both", expand=True)
         
         # Статус (сверху, мелким шрифтом)
         self.status_label = ctk.CTkLabel(
@@ -161,28 +161,28 @@ class GuitarTunerGUI:
         self.note_label = ctk.CTkLabel(
             display_frame,
             text="—",
-            font=ctk.CTkFont(size=140, weight="bold"),
+            font=ctk.CTkFont(size=100, weight="bold"),
             text_color=self.COLOR_TEXT_DIM
         )
-        self.note_label.pack(pady=10)
+        self.note_label.pack(pady=5)
         
         # Частота (средний шрифт)
         self.frequency_label = ctk.CTkLabel(
             display_frame,
             text="— Hz",
-            font=ctk.CTkFont(size=24),
+            font=ctk.CTkFont(size=18),
             text_color=self.COLOR_TEXT_DIM
         )
-        self.frequency_label.pack(pady=5)
+        self.frequency_label.pack(pady=3)
         
         # Отклонение в центах (крупный шрифт)
         self.cents_label = ctk.CTkLabel(
             display_frame,
             text="—",
-            font=ctk.CTkFont(size=32, weight="bold"),
+            font=ctk.CTkFont(size=24, weight="bold"),
             text_color=self.COLOR_TEXT_DIM
         )
-        self.cents_label.pack(pady=10)
+        self.cents_label.pack(pady=5)
     
     def create_tuning_meter(self):
         """Создание визуальной шкалы настройки."""
@@ -190,9 +190,9 @@ class GuitarTunerGUI:
             self.root,
             fg_color=self.COLOR_BG_MEDIUM,
             corner_radius=20,
-            height=180
+            height=140
         )
-        meter_frame.pack(pady=30, padx=40, fill="x")
+        meter_frame.pack(pady=15, padx=40, fill="x")
         meter_frame.pack_propagate(False)
         
         # Заголовок
@@ -202,11 +202,11 @@ class GuitarTunerGUI:
             font=ctk.CTkFont(size=11, weight="bold"),
             text_color=self.COLOR_TEXT_DIM
         )
-        meter_title.pack(pady=(15, 10))
+        meter_title.pack(pady=(10, 5))
         
         # Контейнер для шкалы
         scale_container = ctk.CTkFrame(meter_frame, fg_color="transparent")
-        scale_container.pack(pady=10, padx=30, fill="x")
+        scale_container.pack(pady=5, padx=30, fill="x")
         
         # Метки границ (-50, 0, +50)
         marks_frame = ctk.CTkFrame(scale_container, fg_color="transparent")
@@ -239,7 +239,7 @@ class GuitarTunerGUI:
         # Создаем визуальную шкалу из сегментов
         self.meter_segments = []
         segments_frame = ctk.CTkFrame(scale_container, fg_color="transparent")
-        segments_frame.pack(fill="x", pady=5)
+        segments_frame.pack(fill="x", pady=3)
         
         # 51 сегмент: от -50 до +50
         num_segments = 51
@@ -247,7 +247,7 @@ class GuitarTunerGUI:
             segment = ctk.CTkFrame(
                 segments_frame,
                 width=10,
-                height=30,
+                height=25,
                 fg_color=self.COLOR_BG_DARK,
                 corner_radius=2
             )
@@ -255,8 +255,8 @@ class GuitarTunerGUI:
             self.meter_segments.append(segment)
         
         # Индикатор положения (стрелка/указатель)
-        indicator_frame = ctk.CTkFrame(scale_container, fg_color="transparent", height=40)
-        indicator_frame.pack(fill="x", pady=(5, 0))
+        indicator_frame = ctk.CTkFrame(scale_container, fg_color="transparent", height=30)
+        indicator_frame.pack(fill="x", pady=(3, 0))
         
         self.indicator_canvas_frame = ctk.CTkFrame(
             indicator_frame,
@@ -268,7 +268,7 @@ class GuitarTunerGUI:
         self.indicator = ctk.CTkLabel(
             self.indicator_canvas_frame,
             text="▼",
-            font=ctk.CTkFont(size=24),
+            font=ctk.CTkFont(size=20),
             text_color=self.COLOR_ACCENT
         )
         self.indicator.place(relx=0.5, rely=0, anchor="n")
@@ -279,17 +279,17 @@ class GuitarTunerGUI:
             self.root,
             fg_color="transparent"
         )
-        control_frame.pack(pady=20, padx=40, fill="x")
+        control_frame.pack(pady=15, padx=40, fill="x")
         
         # Кнопка запуска/остановки (большая, центральная)
         self.start_button = ctk.CTkButton(
             control_frame,
             text="START TUNING",
             command=self.toggle_tuner,
-            font=ctk.CTkFont(size=18, weight="bold"),
-            width=300,
-            height=60,
-            corner_radius=30,
+            font=ctk.CTkFont(size=16, weight="bold"),
+            width=280,
+            height=50,
+            corner_radius=25,
             fg_color=self.COLOR_ACCENT,
             hover_color="#00b8dd",
             text_color="#000000"
